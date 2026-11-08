@@ -1,5 +1,4 @@
 [global]
-# Preserve the former Markdown rule set plus the existing rumdl formatting rules.
 enable = [
   "MD001",
   "MD003",
@@ -48,7 +47,6 @@ enable = [
 ]
 # Limit formatting to the rules previously owned by the rumdl formatter.
 fixable = ["MD007", "MD013", "MD029", "MD047", "MD060", "MD071", "MD076"]
-exclude = ["node_modules/**"]
 line-length = 120
 flavor = "gfm"
 
