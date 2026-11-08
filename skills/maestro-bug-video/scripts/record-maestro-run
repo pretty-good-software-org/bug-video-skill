@@ -25,7 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 FPS = 30
@@ -66,12 +66,21 @@ class Step:
     end: float
     status: str
 
+    def shifted(self, seconds):
+        """The same step, timed from a recording that starts the given seconds later."""
+        return replace(self, start=self.start - seconds, end=self.end - seconds)
+
 
 @dataclass(frozen=True)
 class Recording:
     path: Path
     length: float  # seconds the run took, including the still tail the device file lacks
     started_at_ms: int
+    skipped: float = 0.0  # seconds cut from the start of the device file
+
+    def trimmed(self, seconds):
+        """The same recording without its first seconds."""
+        return replace(self, length=self.length - seconds, skipped=self.skipped + seconds)
 
 
 @dataclass(frozen=True)
@@ -101,8 +110,10 @@ def main():
         copy_fonts(find_fonts(FONT_CANDIDATES), work)
         recording, maestro_exit = record_flow(args, work)
         steps = read_steps(find_commands_json(work / "maestro"), recording.started_at_ms)
-        render(recording, steps, args)
-    print(f"{args.out} ({recording.length:.1f}s), maestro exit code {maestro_exit}")
+        lead_in = seconds_before_first_step(steps)
+        video = recording.trimmed(lead_in)
+        render(video, [step.shifted(lead_in) for step in steps], args)
+    print(f"{args.out} ({video.length:.1f}s), maestro exit code {maestro_exit}")
     sys.exit(maestro_exit)
 
 
@@ -267,6 +278,15 @@ def read_steps(commands_json, started_at_ms):
     return steps
 
 
+def seconds_before_first_step(steps):
+    """Maestro's startup, often several seconds, shows whatever the device showed before the run;
+    the video leaves it out."""
+    if not steps:
+        raise RuntimeError("record-maestro-run: Maestro ran no steps, so there is nothing to show")
+
+    return max(0.0, steps[0].start)
+
+
 # One flat match over Maestro's command kinds; splitting it would scatter one lookup table.
 def describe(kind, body):  # noqa: C901, PLR0911
     """The flow's own words for a step: its label, else the command as written (never evaluated
@@ -318,7 +338,7 @@ def render(recording, steps, args):
     for index, step in enumerate(steps):
         (work / f"step{index}.txt").write_text(step.text)
         filters.extend(step_filters(index, step, font_size))
-    (work / "filters.txt").write_text(";".join(filters_with_screen(filters, recording.length)))
+    (work / "filters.txt").write_text(";".join(filters_with_screen(filters, recording)))
     command = [
         "ffmpeg",
         "-v",
@@ -418,10 +438,12 @@ def step_filters(index, step, font_size):
     return filters
 
 
-def filters_with_screen(list_filters, length):
+def filters_with_screen(list_filters, recording):
     """Chains the list drawing on the canvas, then places the device screen at the right."""
+    length = recording.length
     screen = (
-        f"[0:v]fps={FPS},scale=-2:{SCREEN_HEIGHT},tpad=stop_mode=clone:stop_duration={length:.3f},"
+        f"[0:v]trim=start={recording.skipped:.3f},setpts=PTS-STARTPTS,fps={FPS},"
+        f"scale=-2:{SCREEN_HEIGHT},tpad=stop_mode=clone:stop_duration={length:.3f},"
         f"trim=duration={length:.3f}[screen]"
     )
     canvas = list_filters[0]

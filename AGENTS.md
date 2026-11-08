@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-11-08T23:23:05Z
+last_validated: 2026-11-08T23:56:11Z
 project_type: agent-skill
 ---
 
@@ -39,6 +39,7 @@ build. The repository is public under the MIT license.
 │   ├── 1.1.0.md
 │   ├── 1.1.1.md
 │   ├── 1.1.2.md
+│   ├── 1.1.3.md
 │   ├── header.tpl.md
 │   └── unreleased
 │       └── .gitkeep
@@ -128,10 +129,10 @@ This repository is public.
 ## Testing
 
 Tests cover what the scripts decide on their own: the step text `record-maestro-run` draws, which must never be an
-evaluated value, its step timing, `commands.json` discovery and font selection, and every input `compose-bug-video`
-rejects, with stub `ffmpeg` and `ffprobe` on an isolated `PATH`. The plugin contract test keeps the manifest, the
-skill's frontmatter, and its links consistent. Device recording and ffmpeg encoding are verified by
-hand on real devices; record the device and Maestro version in the pull request.
+evaluated value, its step timing, the cut before the first step, `commands.json` discovery, font selection, and every
+input `compose-bug-video` rejects, with stub `ffmpeg` and `ffprobe` on an isolated `PATH`. The plugin contract test
+keeps the manifest, the skill's frontmatter, and its links consistent. Device recording and ffmpeg encoding are verified
+by hand on real devices; record the device and Maestro version in the pull request.
 
 ## Git Workflow
 
