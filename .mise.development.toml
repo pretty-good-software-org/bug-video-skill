@@ -1,6 +1,5 @@
 # Development profile — additional tools for local work
 [tools]
-"github:pretty-good-software-org/skillctl" = "2.1.0"
 lefthook = "2.1.14"
 gitleaks = "8.30.0"
 

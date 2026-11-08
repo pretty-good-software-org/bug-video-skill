@@ -55,18 +55,16 @@ The two scripts also run on their own:
 
 ## Development
 
-Development uses [mise](https://mise.jdx.dev/), which installs the pinned tools from the lock files. The checks CI
-runs need only public tools:
+Development uses [mise](https://mise.jdx.dev/), which installs the pinned tools from the lock files:
 
 ```bash
-MISE_ENV=ci mise install --locked
-MISE_ENV=ci mise run lint:default
-MISE_ENV=ci mise run test:default
+mise run setup:default
+mise run lint:default
+mise run test:default
 ```
 
-Maintainers with access to the organization's private `skillctl` release run `mise run setup:default`, which also
-installs the Git hooks, and `mise run lint:development`, which adds structural plugin validation. Changes are recorded
-with [Changie](https://changie.dev/) in `.changes/` and merged into [`CHANGELOG.md`](CHANGELOG.md).
+`setup:default` also installs the Git hooks. Changes are recorded with [Changie](https://changie.dev/) in `.changes/`
+and merged into [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 

@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-11-08T21:48:39Z
+last_validated: 2026-11-08T22:39:41Z
 project_type: agent-skill
 ---
 
@@ -9,7 +9,7 @@ project_type: agent-skill
 
 `bug-video-skill` publishes the `maestro-bug-video` Agent Skill as a Claude plugin. The skill records a reproduced
 mobile app bug with Maestro and composes a video people can follow, of one run or of the bug build beside the fixed
-build. The repository is public under the MIT license and derives from the organization's `template-agent-skill`.
+build. The repository is public under the MIT license.
 
 ## Ownership
 
@@ -21,12 +21,13 @@ build. The repository is public under the MIT license and derives from the organ
   `skills/maestro-bug-video/scripts/record-maestro-run` (Python 3.10+, no extension so it runs by name) records an
   Android run. Ruff covers it through `extend-include` in `pyproject.toml`; `lint:shell` runs shellcheck on the bash
   script.
-- The development profile pins the private `skillctl` release for `mise run lint:development`. CI uses only the public
-  base toolchain, so outside contributors run the checks with `MISE_ENV=ci`.
+- `.mise.toml` and `mise.lock` pin the tools CI uses; the development profile adds the Git hook tools (Lefthook and
+  gitleaks). `tests/test_plugin_contract.py` checks that the manifest and the skill describe one identity and that the
+  skill's links resolve.
 - `pyproject.toml` and `uv.lock` own Python dependencies; `UV_NO_MANAGED_PYTHON=1` forces uv onto Mise's Python.
 - Changie owns `CHANGELOG.md`: add entries under `.changes/unreleased/`, batch them into `.changes/<version>.md`, and
   merge.
-- OpenTofu in `pretty-good-software-org/org-github-infrastructure` owns repository settings and rulesets.
+- Branch protection and repository settings are managed outside this repository; do not change them in the GitHub UI.
 
 ## Repository Structure
 
@@ -79,11 +80,9 @@ build. The repository is public under the MIT license and derives from the organ
 │   │   ├── actionlint
 │   │   ├── audit
 │   │   ├── default
-│   │   ├── development
 │   │   ├── python
 │   │   ├── rumdl
 │   │   ├── shell
-│   │   ├── skill
 │   │   └── yamllint
 │   ├── setup
 │   │   └── default
@@ -101,8 +100,8 @@ build. The repository is public under the MIT license and derives from the organ
 │       └── scripts
 ├── tests
 │   ├── test_compose_bug_video.py
-│   ├── test_record_maestro_run.py
-│   └── test_template_contract.py
+│   ├── test_plugin_contract.py
+│   └── test_record_maestro_run.py
 └── uv.lock
 ```
 
@@ -123,14 +122,14 @@ This repository is public.
 
 - Keep product names, customer data, test accounts, hostnames, session links, and local paths out of files and commit
   messages. Examples use neutral apps and text.
-- CI runs on GitHub-hosted runners: the organization's self-hosted runner groups refuse public repositories, and fork
-  pull requests must not reach organization hosts.
+- CI runs on GitHub-hosted runners, so pull requests from forks never run on self-hosted machines.
 
 ## Testing
 
 Tests cover what the scripts decide on their own: the step text `record-maestro-run` draws, which must never be an
 evaluated value, its step timing, `commands.json` discovery and font selection, and every input `compose-bug-video`
-rejects, with stub `ffmpeg` and `ffprobe` on an isolated `PATH`. Device recording and ffmpeg encoding are verified by
+rejects, with stub `ffmpeg` and `ffprobe` on an isolated `PATH`. The plugin contract test keeps the manifest, the
+skill's frontmatter, and its links consistent. Device recording and ffmpeg encoding are verified by
 hand on real devices; record the device and Maestro version in the pull request.
 
 ## Git Workflow
@@ -138,5 +137,4 @@ hand on real devices; record the device and Maestro version in the pull request.
 Check status first, work on feature branches, use Conventional Commits, and open a pull request; run
 `mise run lint:default` and `mise run test:default` before opening it. To release, bump `version` in `apm.yml`, run
 `apm pack --force`, batch the changie entries for that version, and merge to `main` through a pull request. Tag the
-merged commit `v<version>` with an annotated tag and publish a GitHub release; the `pretty-good-skills` marketplace pins
-the tagged commit's full SHA.
+merged commit `v<version>` with an annotated tag and publish a GitHub release; consumers pin the tagged commit.

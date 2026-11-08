@@ -20,13 +20,10 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    # Public repository: the organization's self-hosted runner groups refuse public
-    # repositories, and fork pull requests must not reach organization hosts.
+    # GitHub-hosted, so pull requests from forks never run on self-hosted machines.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     steps:
-      # ci-shared is private, so a public repository cannot use its setup action; these are the
-      # same pinned steps it wraps, as in the public agent-mermaid-hook repository.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
