@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-11-08T19:02:44Z
+last_validated: 2026-11-08T17:20:59Z
 project_type: agent-skill
 ---
 
@@ -36,6 +36,7 @@ build. The repository is public under the MIT license and derives from the organ
 ├── .changes
 │   ├── 1.0.0.md
 │   ├── 1.1.0.md
+│   ├── 1.1.1.md
 │   ├── header.tpl.md
 │   └── unreleased
 │       └── .gitkeep
@@ -103,6 +104,7 @@ build. The repository is public under the MIT license and derives from the organ
 │   ├── test_compose_bug_video.py
 │   ├── test_record_maestro_run.py
 │   └── test_template_contract.py
+├── tools
 └── uv.lock
 ```
 
@@ -129,7 +131,7 @@ This repository is public.
 ## Testing
 
 Tests cover what the scripts decide on their own: the step text `record-maestro-run` draws, which must never be an
-evaluated value, its step timing and `commands.json` discovery, and every input `compose-bug-video`
+evaluated value, its step timing, `commands.json` discovery and font selection, and every input `compose-bug-video`
 rejects, with stub `ffmpeg` and `ffprobe` on an isolated `PATH`. Device recording and ffmpeg encoding are verified by
 hand on real devices; record the device and Maestro version in the pull request.
 

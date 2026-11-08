@@ -137,3 +137,25 @@ def test_find_commands_json_rejects_a_run_without_one(tmp_path):
     assert str(error.value) == (
         f"record-maestro-run: expected one commands.json under {tmp_path}, found 0"
     )
+
+
+def test_find_fonts_falls_back_to_the_first_complete_pair(tmp_path):
+    macos = record.Fonts(tmp_path / "Arial.ttf", tmp_path / "Arial Bold.ttf")
+    linux = record.Fonts(tmp_path / "DejaVuSans.ttf", tmp_path / "DejaVuSans-Bold.ttf")
+    for path in (macos.regular, linux.regular, linux.bold):
+        path.write_bytes(b"")
+
+    fonts = record.find_fonts([macos, linux])
+
+    assert fonts == linux, f"chose {fonts}, expected the complete Linux pair {linux}"
+
+
+def test_find_fonts_rejects_a_system_without_any_pair(tmp_path):
+    macos = record.Fonts(tmp_path / "Arial.ttf", tmp_path / "Arial Bold.ttf")
+
+    with pytest.raises(RuntimeError) as error:
+        record.find_fonts([macos])
+
+    assert str(error.value) == (
+        "record-maestro-run: no fonts found; install Arial (macOS) or DejaVu Sans (Linux)"
+    )

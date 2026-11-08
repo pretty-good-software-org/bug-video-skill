@@ -41,8 +41,6 @@ DEVICE_RECORDING = "/sdcard/record-maestro-run.mp4"
 SCREENRECORD_OLD_LIMIT_SECONDS = 180
 SCREENRECORD_NO_LIMIT_HINT = "Set to 0"
 STOP_TIMEOUT_SECONDS = 15
-FONT_REGULAR = "/System/Library/Fonts/Supplemental/Arial.ttf"
-FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 BACKGROUND = "0x10151F"
 TEXT_PENDING, TEXT_RUNNING, TEXT_DONE = "0x6B7385", "0xFFFFFF", "0xD5DAE3"
 STATUS_COLORS = {
@@ -76,10 +74,31 @@ class Recording:
     started_at_ms: int
 
 
+@dataclass(frozen=True)
+class Fonts:
+    regular: Path
+    bold: Path
+
+
+# Searched in order: Arial on macOS, DejaVu Sans on Linux, as in compose-bug-video.
+FONT_CANDIDATES = (
+    Fonts(
+        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+    ),
+    Fonts(
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ),
+)
+
+
 def main():
     args = parse_arguments()
     with tempfile.TemporaryDirectory(prefix="record-maestro-run-") as work_name:
         work = Path(work_name)
+        # Fonts are checked before recording, so a missing font cannot waste a run.
+        copy_fonts(find_fonts(FONT_CANDIDATES), work)
         recording, maestro_exit = record_flow(args, work)
         steps = read_steps(find_commands_json(work / "maestro"), recording.started_at_ms)
         render(recording, steps, args)
@@ -102,6 +121,23 @@ def parse_arguments():
     args.out = args.out.resolve()
 
     return args
+
+
+def find_fonts(candidates):
+    """The first candidate whose regular and bold fonts both exist."""
+    for fonts in candidates:
+        if fonts.regular.is_file() and fonts.bold.is_file():
+            return fonts
+
+    raise RuntimeError(
+        "record-maestro-run: no fonts found; install Arial (macOS) or DejaVu Sans (Linux)"
+    )
+
+
+def copy_fonts(fonts, work):
+    """Copies the fonts under plain names, keeping spaces out of ffmpeg's filter syntax."""
+    shutil.copy(fonts.regular, work / "regular.ttf")
+    shutil.copy(fonts.bold, work / "bold.ttf")
 
 
 def record_flow(args, work):
@@ -277,8 +313,6 @@ def render(recording, steps, args):
     title = args.title or flow_name(args.flow)
     font_size = step_font_size(len(steps))
     work = recording.path.parent
-    shutil.copy(FONT_REGULAR, work / "regular.ttf")
-    shutil.copy(FONT_BOLD, work / "bold.ttf")
     (work / "title.txt").write_text(title)
     filters = [canvas_filter(recording.length), title_filter()]
     for index, step in enumerate(steps):

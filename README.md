@@ -31,13 +31,13 @@ Tested with Maestro 2.12.1 on iOS 26.4 simulators and on a Pixel 7 with Android 
 With [APM](https://github.com/microsoft/apm), pinned to a release:
 
 ```bash
-apm install pretty-good-software-org/bug-video-skill#v1.1.0
+apm install pretty-good-software-org/bug-video-skill#v1.1.1
 ```
 
 Without APM, copy the skill directory into your agent's skills directory, for example for Claude Code:
 
 ```bash
-git clone --depth 1 --branch v1.1.0 https://github.com/pretty-good-software-org/bug-video-skill.git
+git clone --depth 1 --branch v1.1.1 https://github.com/pretty-good-software-org/bug-video-skill.git
 cp -R bug-video-skill/skills/maestro-bug-video ~/.claude/skills/
 ```
 
