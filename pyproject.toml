@@ -1,0 +1,29 @@
+[project]
+name = "bug-video-skill"
+version = "0.1.0-alpha.1"
+description = "Agent Skill that turns Maestro runs into bug and before/after videos"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "exceptiongroup>=1.2.2; python_version < '3.11'",
+  "tomli>=2.0; python_version < '3.11'",
+  "ruff==0.16.9",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "UP", "B", "SIM", "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
+src = ["scripts", "tests"]
+# The skill ships its Python entry point without a .py extension, so it runs by name.
+extend-include = ["skills/*/scripts/record-maestro-run"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+testpaths = ["tests"]
