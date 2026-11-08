@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-11-08T17:20:59Z
+last_validated: 2026-11-08T21:48:39Z
 project_type: agent-skill
 ---
 
@@ -43,7 +43,6 @@ build. The repository is public under the MIT license and derives from the organ
 ├── .changie.yaml
 ├── .claude-plugin
 │   └── plugin.json
-├── .coderabbit.yaml
 ├── .github
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   ├── dependabot.yml
@@ -104,7 +103,6 @@ build. The repository is public under the MIT license and derives from the organ
 │   ├── test_compose_bug_video.py
 │   ├── test_record_maestro_run.py
 │   └── test_template_contract.py
-├── tools
 └── uv.lock
 ```
 
