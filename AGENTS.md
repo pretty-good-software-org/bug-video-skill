@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-11-08T22:39:41Z
+last_validated: 2026-11-08T23:23:05Z
 project_type: agent-skill
 ---
 
@@ -38,6 +38,7 @@ build. The repository is public under the MIT license.
 │   ├── 1.0.0.md
 │   ├── 1.1.0.md
 │   ├── 1.1.1.md
+│   ├── 1.1.2.md
 │   ├── header.tpl.md
 │   └── unreleased
 │       └── .gitkeep
