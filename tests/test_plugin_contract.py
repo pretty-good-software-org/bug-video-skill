@@ -61,3 +61,16 @@ def test_skill_links_resolve_inside_the_skill_directory():
         resolved = (SKILL_ROOT / target).resolve()
         assert resolved.is_relative_to(SKILL_ROOT.resolve()), f"{target} leaves the skill"
         assert resolved.is_file(), f"{target} does not exist"
+
+
+def test_skill_examples_call_scripts_by_their_path():
+    skill_text = SKILL_PATH.read_text()
+    script_names = sorted(path.name for path in (SKILL_ROOT / "scripts").iterdir())
+    code = "\n".join(re.findall(r"```[a-z]*\n(.*?)```", skill_text, re.DOTALL))
+
+    bare_calls = [
+        line.strip() for line in code.splitlines() if line.strip().split(" ", 1)[0] in script_names
+    ]
+
+    assert script_names == ["compose-bug-video", "record-maestro-run"], f"scripts: {script_names}"
+    assert bare_calls == [], f"scripts are not on PATH; call them as scripts/<name>: {bare_calls}"

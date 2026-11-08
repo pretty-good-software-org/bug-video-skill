@@ -26,6 +26,8 @@ Two modes share one workflow:
 
 ## Workflow
 
+Paths such as `scripts/compose-bug-video` are relative to this skill's directory; the scripts are not on `PATH`.
+
 1. **Make the flow readable.** Give every command a plain-language `label:` that says what the user does or sees.
    Read [`references/flow-tips.md`](references/flow-tips.md) before editing the flow; it covers labels, the
    recording variant, and speed.
@@ -51,8 +53,8 @@ Two modes share one workflow:
    `commands.json`:
 
    ```bash
-   record-maestro-run --device <bug-device> --flow <bug-variant.yaml> --out before.mp4
-   record-maestro-run --device <fix-device> --flow <flow.yaml> --out after.mp4 --maestro "mise exec -- maestro"
+   scripts/record-maestro-run --device <bug-device> --flow <bug-variant.yaml> --out before.mp4
+   scripts/record-maestro-run --device <fix-device> --flow <flow.yaml> --out after.mp4 --maestro "mise exec -- maestro"
    ```
 
    It exits with Maestro's exit code. Recording has no time limit where the device's `screenrecord` allows it, as on
@@ -73,11 +75,11 @@ Two modes share one workflow:
 6. **Compose the video** with [`scripts/compose-bug-video`](scripts/compose-bug-video):
 
    ```bash
-   compose-bug-video explain --video before.mp4 \
+   scripts/compose-bug-video explain --video before.mp4 \
      --title "<App> · <Screen>" --subtitle "Bug: <one sentence a user would say>" \
      --steps "<the steps in one line>" --caption "<what the viewer should notice>" --out bug.mp4
 
-   compose-bug-video compare --before before.mp4 --after after.mp4 \
+   scripts/compose-bug-video compare --before before.mp4 --after after.mp4 \
      --title "<App> · <Screen>" --subtitle "Bug: <one sentence>" \
      --steps "Same steps on both sides: <steps>" \
      --caption "Left: <what goes wrong>.   Right: <what the fix does>." --out before-after.mp4
