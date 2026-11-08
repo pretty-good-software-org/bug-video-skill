@@ -4,25 +4,21 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "bug-video-skill"
-version = "0.1.0a1"
+version = "0.0.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.2.2" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "ruff", specifier = "==0.16.9" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
 ]
 
 [[package]]
