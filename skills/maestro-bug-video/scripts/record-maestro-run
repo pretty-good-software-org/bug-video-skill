@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+"""Run a Maestro flow on an Android device and render a video with the flow's steps beside
+the screen.
+
+    record-maestro-run --device SERIAL --flow FLOW.yaml --out OUT.mp4 \
+        [--maestro "mise exec -- maestro"]
+
+Use it instead of `maestro record --local` on Android, which cuts the end of the run:
+`screenrecord` writes frames only when the screen changes, and the renderer stops at the last
+frame, before the final screen of the run. This script records the screen itself, runs
+`maestro test`, keeps the last frame on screen until the run really ended, and draws each step
+from Maestro's `commands.json` (start time, duration, result).
+
+The step text comes from each command's `label:`, or from the command as written in the flow.
+It never comes from the evaluated command, so `${MAESTRO_*}` secrets typed with `inputText` do
+not appear in the video. The exit code is the Maestro exit code, so a failing flow fails the
+recording too.
+"""
+
+import argparse
+import json
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+FPS = 30
+CANVAS_WIDTH, CANVAS_HEIGHT = 1920, 1080
+MARGIN = 48
+SCREEN_HEIGHT = CANVAS_HEIGHT - 2 * MARGIN
+TITLE_FONT_SIZE = 40
+STEP_FONT_SIZES = range(30, 17, -2)  # the largest that fits the step count wins
+LIST_TOP = 140
+DEVICE_RECORDING = "/sdcard/record-maestro-run.mp4"
+# Older screenrecord versions stop at this many seconds and reject 0;
+# newer ones accept 0 for no limit.
+SCREENRECORD_OLD_LIMIT_SECONDS = 180
+SCREENRECORD_NO_LIMIT_HINT = "Set to 0"
+STOP_TIMEOUT_SECONDS = 15
+FONT_REGULAR = "/System/Library/Fonts/Supplemental/Arial.ttf"
+FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+BACKGROUND = "0x10151F"
+TEXT_PENDING, TEXT_RUNNING, TEXT_DONE = "0x6B7385", "0xFFFFFF", "0xD5DAE3"
+STATUS_COLORS = {
+    "COMPLETED": "0x2EA043",
+    "WARNED": "0xD29922",
+    "FAILED": "0xDA3633",
+    "SKIPPED": "0x6B7385",
+}
+MARKER_PENDING, MARKER_RUNNING = "0x30363D", "0x388BFD"
+# Bookkeeping commands that are not steps a viewer follows.
+HIDDEN_COMMANDS = {
+    "defineVariablesCommand",
+    "applyConfigurationCommand",
+    "startRecordingCommand",
+    "stopRecordingCommand",
+}
+
+
+@dataclass(frozen=True)
+class Step:
+    text: str
+    start: float  # seconds from the start of the recording
+    end: float
+    status: str
+
+
+@dataclass(frozen=True)
+class Recording:
+    path: Path
+    length: float  # seconds the run took, including the still tail the device file lacks
+    started_at_ms: int
+
+
+def main():
+    args = parse_arguments()
+    with tempfile.TemporaryDirectory(prefix="record-maestro-run-") as work_name:
+        work = Path(work_name)
+        recording, maestro_exit = record_flow(args, work)
+        steps = read_steps(find_commands_json(work / "maestro"), recording.started_at_ms)
+        render(recording, steps, args)
+    print(f"{args.out} ({recording.length:.1f}s), maestro exit code {maestro_exit}")
+    sys.exit(maestro_exit)
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--device", required=True, help="adb serial of the Android device")
+    parser.add_argument("--flow", required=True, type=Path)
+    parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument(
+        "--maestro",
+        default="maestro",
+        help="how to start Maestro, e.g. 'mise exec -- maestro'",
+    )
+    parser.add_argument("--title", help="heading above the steps; defaults to the flow's name")
+    args = parser.parse_args()
+    args.out = args.out.resolve()
+
+    return args
+
+
+def record_flow(args, work):
+    """Records the device screen for the length of one `maestro test` run."""
+    recorder, started_at_ms = start_screen_recording(args.device)
+    try:
+        maestro_exit = run_maestro(args, work / "maestro")
+    finally:
+        stopped_at_ms = stop_screen_recording(args.device, recorder)
+    path = work / "screen.mp4"
+    run_quietly(["adb", "-s", args.device, "pull", DEVICE_RECORDING, str(path)])
+    run_quietly(["adb", "-s", args.device, "shell", "rm", "-f", DEVICE_RECORDING])
+    recording = Recording(path, (stopped_at_ms - started_at_ms) / 1000, started_at_ms)
+
+    return recording, maestro_exit
+
+
+def run_quietly(command):
+    """Runs a helper command, showing its output only when it fails."""
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"record-maestro-run: {' '.join(command)} failed: {result.stderr.strip()}"
+        )
+
+
+def start_screen_recording(device):
+    command = [
+        "adb",
+        "-s",
+        device,
+        "shell",
+        "screenrecord",
+        "--time-limit",
+        str(time_limit_seconds(device)),
+        "--bit-rate",
+        "8000000",
+        DEVICE_RECORDING,
+    ]
+    started_at_ms = time.time_ns() // 1_000_000
+    recorder = subprocess.Popen(
+        command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+    )
+
+    return recorder, started_at_ms
+
+
+def time_limit_seconds(device):
+    """0, for no limit, where this device's screenrecord supports it; otherwise its old fixed
+    maximum."""
+    help_text = subprocess.run(
+        ["adb", "-s", device, "shell", "screenrecord", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    if SCREENRECORD_NO_LIMIT_HINT in help_text.stdout + help_text.stderr:
+        return 0
+
+    return SCREENRECORD_OLD_LIMIT_SECONDS
+
+
+def run_maestro(args, output_dir):
+    # Both outputs go to the temporary work directory: Maestro's logs record typed text,
+    # including secrets.
+    command = [
+        *shlex.split(args.maestro),
+        "--device",
+        args.device,
+        "test",
+        "--test-output-dir",
+        str(output_dir),
+        "--debug-output",
+        str(output_dir / "debug"),
+        str(args.flow.resolve()),
+    ]
+
+    return subprocess.run(command).returncode
+
+
+def stop_screen_recording(device, recorder):
+    stopped_at_ms = time.time_ns() // 1_000_000
+    # SIGINT lets screenrecord finish the MP4; killing it outright leaves a file without its index.
+    subprocess.run(["adb", "-s", device, "shell", "pkill", "-INT", "screenrecord"], check=False)
+    try:
+        recorder.wait(timeout=STOP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        recorder.kill()
+        raise RuntimeError("record-maestro-run: screenrecord did not stop after SIGINT") from None
+    if recorder.returncode != 0:
+        raise RuntimeError(
+            f"record-maestro-run: screenrecord failed: {recorder.stderr.read().strip()}"
+        )
+
+    return stopped_at_ms
+
+
+def find_commands_json(output_dir):
+    debug_dir = output_dir / "debug"
+    found = sorted(
+        path for path in output_dir.rglob("commands*.json") if debug_dir not in path.parents
+    )
+    if len(found) != 1:
+        raise RuntimeError(
+            f"record-maestro-run: expected one commands.json under {output_dir}, found {len(found)}"
+        )
+
+    return found[0]
+
+
+def read_steps(commands_json, started_at_ms):
+    steps = []
+    for entry in json.loads(commands_json.read_text()):
+        kind, body = next((k, v) for k, v in entry["command"].items() if v is not None)
+        metadata = entry["metadata"]
+        if kind in HIDDEN_COMMANDS or metadata.get("depth", 0) != 0:
+            continue
+        start = (metadata["timestamp"] - started_at_ms) / 1000
+        steps.append(
+            Step(
+                describe(kind, body),
+                start,
+                start + metadata.get("duration", 0) / 1000,
+                metadata["status"],
+            )
+        )
+
+    return steps
+
+
+# One flat match over Maestro's command kinds; splitting it would scatter one lookup table.
+def describe(kind, body):  # noqa: C901, PLR0911
+    """The flow's own words for a step: its label, else the command as written (never evaluated
+    values)."""
+    if body.get("label"):
+        return body["label"]
+    selector = selector_text(body.get("selector", {}))
+    condition = body.get("condition", {})
+    match kind:
+        case "launchAppCommand":
+            return f"Launch {body['appId']}"
+        case "tapOnElement":
+            return f"Tap on {selector}"
+        case "inputTextCommand":
+            return f"Input {body['text']}"
+        case "eraseTextCommand":
+            return "Erase the text field"
+        case "hideKeyboardCommand":
+            return "Hide the keyboard"
+        case "swipeCommand":
+            return "Swipe"
+        case "scrollUntilVisible":
+            return f"Scroll until {selector} is visible"
+        case "setAirplaneModeCommand":
+            return f"{body['value']} airplane mode"
+        case "assertConditionCommand" if "visible" in condition:
+            return f"{selector_text(condition['visible'])} is visible"
+        case "assertConditionCommand" if "notVisible" in condition:
+            return f"{selector_text(condition['notVisible'])} is not visible"
+        case _:
+            return kind.removesuffix("Command")
+
+
+def selector_text(selector):
+    if "textRegex" in selector:
+        return f'"{selector["textRegex"]}"'
+    if "idRegex" in selector:
+        return f"id {selector['idRegex']}"
+
+    return "the element"
+
+
+def render(recording, steps, args):
+    title = args.title or flow_name(args.flow)
+    font_size = step_font_size(len(steps))
+    work = recording.path.parent
+    shutil.copy(FONT_REGULAR, work / "regular.ttf")
+    shutil.copy(FONT_BOLD, work / "bold.ttf")
+    (work / "title.txt").write_text(title)
+    filters = [canvas_filter(recording.length), title_filter()]
+    for index, step in enumerate(steps):
+        (work / f"step{index}.txt").write_text(step.text)
+        filters.extend(step_filters(index, step, font_size))
+    (work / "filters.txt").write_text(";".join(filters_with_screen(filters, recording.length)))
+    command = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        recording.path.name,
+        "-filter_complex_script",
+        "filters.txt",
+        "-map",
+        "[out]",
+        "-t",
+        f"{recording.length:.3f}",
+        "-r",
+        str(FPS),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "23",
+        "-preset",
+        "slow",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(args.out),
+    ]
+    subprocess.run(command, cwd=work, check=True)
+
+
+def flow_name(flow):
+    for line in flow.read_text().splitlines():
+        if line.startswith("name:"):
+            return line.removeprefix("name:").strip()
+
+    return flow.stem
+
+
+def step_font_size(step_count):
+    available = CANVAS_HEIGHT - LIST_TOP - MARGIN
+    for size in STEP_FONT_SIZES:
+        if step_count * line_height(size) <= available:
+            return size
+
+    return STEP_FONT_SIZES[-1]
+
+
+def line_height(font_size):
+    return int(font_size * 1.55)
+
+
+def canvas_filter(length):
+    return f"color=c={BACKGROUND}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:r={FPS}:d={length:.3f}[canvas]"
+
+
+def title_filter():
+    return (
+        f"drawtext=fontfile=bold.ttf:textfile=title.txt:expansion=none:fontcolor={TEXT_RUNNING}"
+        f":fontsize={TITLE_FONT_SIZE}:x={MARGIN}:y={MARGIN}"
+    )
+
+
+def step_filters(index, step, font_size):
+    """The step's marker and text in each of its three states: waiting, running, and finished
+    with its status."""
+    y = LIST_TOP + index * line_height(font_size)
+    marker = int(font_size * 0.7)
+    marker_y = y + (font_size - marker) // 2
+    states = [
+        (f"lt(t,{step.start:.3f})", MARKER_PENDING, TEXT_PENDING, "regular.ttf"),
+        (
+            f"between(t,{step.start:.3f},{step.end:.3f})",
+            MARKER_RUNNING,
+            TEXT_RUNNING,
+            "bold.ttf",
+        ),
+        (
+            f"gt(t,{step.end:.3f})",
+            STATUS_COLORS.get(step.status, STATUS_COLORS["FAILED"]),
+            TEXT_DONE,
+            "regular.ttf",
+        ),
+    ]
+    filters = []
+    for enable, marker_color, text_color, font in states:
+        filters.append(
+            f"drawbox=x={MARGIN}:y={marker_y}:w={marker}:h={marker}:color={marker_color}:t=fill"
+            f":enable='{enable}'"
+        )
+        filters.append(
+            f"drawtext=fontfile={font}:textfile=step{index}.txt:expansion=none"
+            f":fontcolor={text_color}"
+            f":fontsize={font_size}:x={MARGIN + marker + 20}:y={y}:enable='{enable}'"
+        )
+
+    return filters
+
+
+def filters_with_screen(list_filters, length):
+    """Chains the list drawing on the canvas, then places the device screen at the right."""
+    screen = (
+        f"[0:v]fps={FPS},scale=-2:{SCREEN_HEIGHT},tpad=stop_mode=clone:stop_duration={length:.3f},"
+        f"trim=duration={length:.3f}[screen]"
+    )
+    canvas = list_filters[0]
+    drawing = "[canvas]" + ",".join(list_filters[1:]) + "[listed]"
+    overlay = f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]"
+
+    return [screen, canvas, drawing, overlay]
+
+
+if __name__ == "__main__":
+    main()

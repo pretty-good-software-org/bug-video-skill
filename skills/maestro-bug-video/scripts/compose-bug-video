@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Turns local Maestro recordings into a video a person can follow: a title card, plain captions, and a held final frame.
+#
+#   compose-bug-video explain --video RUN.mp4 --title T --subtitle S --caption C [--steps TEXT] --out OUT.mp4
+#   compose-bug-video compare --before BEFORE.mp4 --after AFTER.mp4 --title T --subtitle S --caption C
+#                             [--steps TEXT] [--before-label L] [--after-label L] --out OUT.mp4
+#
+# Optional for both: --font REGULAR.ttf --font-bold BOLD.ttf (default: Arial on macOS, DejaVu Sans on Linux),
+# --hold SECONDS (final frame, default 4).
+set -euo pipefail
+
+readonly title_seconds=4
+readonly fps=30
+readonly default_hold_seconds=4
+readonly default_before_label="BEFORE · current app"
+readonly default_after_label="AFTER · with the fix"
+readonly background="0xF6F8FA"
+readonly text_strong="0x14213D"
+readonly text_muted="0x5B6475"
+readonly bug_text="0xA3244F"
+readonly bug_fill="0xFCEEF3"
+readonly fix_text="0x1F7A5C"
+readonly fix_fill="0xF5FCF7"
+readonly macos_regular="/System/Library/Fonts/Supplemental/Arial.ttf"
+readonly macos_bold="/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+readonly linux_regular="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+readonly linux_bold="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# Average glyph width as a share of the font size, for wrapping; generous so lines never touch the edges.
+readonly glyph_width_ratio=0.58
+
+fail() {
+  echo "compose-bug-video: $*" >&2
+  exit 1
+}
+
+usage() {
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+first_existing() {
+  local path
+  for path in "$@"; do
+    if [[ -f "$path" ]]; then
+      echo "$path"
+      return 0
+    fi
+  done
+  return 1
+}
+
+require_tools() {
+  command -v ffmpeg >/dev/null || fail "ffmpeg not found"
+  command -v ffprobe >/dev/null || fail "ffprobe not found"
+  # Read the whole list first: piping into `grep -q` would cut ffmpeg off early and pipefail would report that.
+  local filters
+  filters=$(ffmpeg -hide_banner -filters 2>/dev/null)
+  [[ "$filters" == *" drawtext "* ]] || fail "this ffmpeg lacks the drawtext filter (needs libfreetype)"
+}
+
+# ffmpeg 7+ centres each wrapped line; older versions centre the block and keep its lines left-aligned.
+line_centering() {
+  local help
+  help=$(ffmpeg -hide_banner -h filter=drawtext 2>/dev/null)
+  if [[ "$help" == *"text_align"* ]]; then
+    echo ":text_align=C"
+  fi
+}
+
+absolute() {
+  (cd "$(dirname "$1")" && echo "$PWD/$(basename "$1")")
+}
+
+duration_of() {
+  ffprobe -v error -show_entries format=duration -of csv=p=0 "$1"
+}
+
+chars_fitting() {
+  local width=$1 font_size=$2
+  awk -v w="$width" -v s="$font_size" -v r="$glyph_width_ratio" 'BEGIN { print int(w / (s * r)) }'
+}
+
+# drawtext reads text from files with expansion off, so quotes, colons and % need no escaping; long text is wrapped.
+write_text() {
+  local name=$1 text=$2 max_chars=$3
+  printf '%s\n' "$text" | fold -s -w "$max_chars" | sed 's/ *$//' > "$work/$name.txt"
+}
+
+encode() {
+  ffmpeg -v error -y "$@" -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -r "$fps" -an
+}
+
+text_filter() {
+  local name=$1 style=$2
+  echo "drawtext=textfile=$name.txt:expansion=none$centering:$style:x=(w-tw)/2"
+}
+
+# Letterboxes any recording, landscape or portrait, into a fixed panel without distorting it.
+fit_into() {
+  local width=$1 height=$2
+  echo "scale=$width:$height:force_original_aspect_ratio=decrease,pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=$background"
+}
+
+make_title_card() {
+  local width=$1 height=$2
+  write_text title "$opt_title" "$(chars_fitting "$width" 60)"
+  write_text subtitle "$opt_subtitle" "$(chars_fitting "$width" 38)"
+  local filters
+  filters="$(text_filter title "fontfile=bold.ttf:fontcolor=$text_strong:fontsize=60:line_spacing=8:y=h*0.24")"
+  filters+=",$(text_filter subtitle "fontfile=bold.ttf:fontcolor=$bug_text:fontsize=38:line_spacing=8:y=h*0.40")"
+  if [[ -n "$opt_steps" ]]; then
+    write_text steps "$opt_steps" "$(chars_fitting "$width" 32)"
+    filters+=",$(text_filter steps "fontfile=regular.ttf:fontcolor=$text_muted:fontsize=32:line_spacing=8:y=h*0.62")"
+  fi
+  encode -f lavfi -i "color=c=$background:s=${width}x$height:d=$title_seconds:r=$fps" -vf "$filters" title.mp4
+}
+
+# Caption centred in the bar under the video, wrapped to its width.
+caption_filter() {
+  local width=$1 bar_height=$2 font_size=$3
+  write_text caption "$opt_caption" "$(chars_fitting "$width" "$font_size")"
+  text_filter caption "fontfile=regular.ttf:fontcolor=$text_strong:fontsize=$font_size:line_spacing=6:y=h-$bar_height+($bar_height-th)/2"
+}
+
+join_with_title() {
+  printf "file 'title.mp4'\nfile 'body.mp4'\n" > list.txt
+  ffmpeg -v error -y -f concat -safe 0 -i list.txt -c copy -movflags +faststart "$opt_out"
+}
+
+compose_explain() {
+  local length
+  length=$(awk -v d="$(duration_of "$opt_video")" -v h="$opt_hold" 'BEGIN { print d + h }')
+  make_title_card 1280 820
+  encode -i "$opt_video" -filter_complex \
+    "[0:v]fps=$fps,$(fit_into 1280 720),tpad=stop_mode=clone:stop_duration=$opt_hold,pad=1280:820:0:0:color=$background,$(caption_filter 1280 100 30)[v]" \
+    -map "[v]" -t "$length" body.mp4
+  join_with_title
+}
+
+side_panel() {
+  local input=$1 label=$2 colors=$3
+  local text_color=${colors%%,*} fill=${colors##*,}
+  echo "[$input:v]fps=$fps,$(fit_into 960 540),tpad=stop_mode=clone:stop_duration=600,pad=960:620:0:80:color=$background,drawbox=x=0:y=0:w=960:h=80:color=$fill:t=fill,$(text_filter "$label" "fontfile=bold.ttf:fontcolor=$text_color:fontsize=40:y=(80-th)/2")"
+}
+
+compose_compare() {
+  local length
+  length=$(awk -v b="$(duration_of "$opt_before")" -v a="$(duration_of "$opt_after")" -v h="$opt_hold" \
+    'BEGIN { print (b > a ? b : a) + h }')
+  write_text before_label "$opt_before_label" "$(chars_fitting 960 40)"
+  write_text after_label "$opt_after_label" "$(chars_fitting 960 40)"
+  make_title_card 1920 740
+  encode -i "$opt_before" -i "$opt_after" -filter_complex \
+    "$(side_panel 0 before_label "$bug_text,$bug_fill")[b];$(side_panel 1 after_label "$fix_text,$fix_fill")[a];[b][a]hstack=inputs=2,pad=1920:740:0:0:color=$background,$(caption_filter 1920 120 34)[v]" \
+    -map "[v]" -t "$length" body.mp4
+  join_with_title
+}
+
+mode=${1:-}
+[[ "$mode" == explain || "$mode" == compare ]] || usage
+shift
+
+opt_video="" opt_before="" opt_after="" opt_title="" opt_subtitle="" opt_caption="" opt_steps="" opt_out=""
+opt_before_label=$default_before_label opt_after_label=$default_after_label opt_hold=$default_hold_seconds
+opt_font="" opt_font_bold=""
+while (($#)); do
+  [[ $# -ge 2 ]] || fail "missing value for $1"
+  case $1 in
+    --video) opt_video=$2 ;;
+    --before) opt_before=$2 ;;
+    --after) opt_after=$2 ;;
+    --title) opt_title=$2 ;;
+    --subtitle) opt_subtitle=$2 ;;
+    --caption) opt_caption=$2 ;;
+    --steps) opt_steps=$2 ;;
+    --before-label) opt_before_label=$2 ;;
+    --after-label) opt_after_label=$2 ;;
+    --hold) opt_hold=$2 ;;
+    --font) opt_font=$2 ;;
+    --font-bold) opt_font_bold=$2 ;;
+    --out) opt_out=$2 ;;
+    *) fail "unknown option $1" ;;
+  esac
+  shift 2
+done
+
+require_tools
+[[ -n "$opt_title" && -n "$opt_subtitle" && -n "$opt_caption" && -n "$opt_out" ]] \
+  || fail "--title, --subtitle, --caption and --out are required"
+[[ "$opt_hold" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--hold must be a number of seconds, got \"$opt_hold\""
+if [[ "$mode" == explain ]]; then
+  [[ -f "$opt_video" ]] || fail "--video must be an existing recording, got \"$opt_video\""
+else
+  [[ -f "$opt_before" && -f "$opt_after" ]] || fail "--before and --after must be existing recordings"
+fi
+opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
+opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
+
+# Paths become absolute before the work directory takes over.
+if [[ "$mode" == explain ]]; then
+  opt_video=$(absolute "$opt_video")
+else
+  opt_before=$(absolute "$opt_before")
+  opt_after=$(absolute "$opt_after")
+fi
+opt_out=$(absolute "$opt_out")
+centering=$(line_centering)
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# Plain file names inside the work directory keep font paths with spaces or colons out of ffmpeg's filter syntax.
+cp "$opt_font" "$work/regular.ttf"
+cp "$opt_font_bold" "$work/bold.ttf"
+cd "$work"
+
+"compose_$mode"
+echo "$opt_out ($(duration_of "$opt_out")s)"

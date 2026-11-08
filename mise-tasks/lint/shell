@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Lint the skill's shell scripts with shellcheck"
+set -euo pipefail
+
+shellcheck skills/maestro-bug-video/scripts/compose-bug-video
