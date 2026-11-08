@@ -37,7 +37,9 @@ Paths such as `scripts/compose-bug-video` are relative to this skill's directory
 3. **Install the builds.** Build the bug state from the commit before the fix, not by hand-reverting files, unless the
    fix is a single line you restore immediately. A `git worktree` at the base commit with its own build output keeps
    the two builds apart. Put each build on its own device or reinstall between recordings.
-4. **Record one run at a time.** On an iOS simulator, use Maestro's renderer:
+4. **Record one run at a time.** Before each recording, leave the device on its home screen or on the app under
+   test: until the flow's first step changes the screen, the video shows whatever the device showed before.
+   On an iOS simulator, use Maestro's renderer:
 
    ```bash
    maestro --device <bug-device> record --local <bug-variant.yaml> before.mp4
@@ -57,8 +59,9 @@ Paths such as `scripts/compose-bug-video` are relative to this skill's directory
    scripts/record-maestro-run --device <fix-device> --flow <flow.yaml> --out after.mp4 --maestro "mise exec -- maestro"
    ```
 
-   It exits with Maestro's exit code. Recording has no time limit where the device's `screenrecord` allows it, as on
-   Android 17; older versions stop recording after 180 seconds.
+   The video starts at the flow's first step, without Maestro's startup. It exits with Maestro's exit code.
+   Recording has no time limit where the device's `screenrecord` allows it, as on Android 17; older versions stop
+   recording after 180 seconds.
 
    A flow that types a secret, such as a test account's password from `${MAESTRO_PASSWORD}`, needs a `label:` on that
    `inputText`: `maestro record` prints the resolved text in its step list, so an unlabelled step shows the secret in

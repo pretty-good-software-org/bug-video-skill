@@ -159,3 +159,58 @@ def test_find_fonts_rejects_a_system_without_any_pair(tmp_path):
     assert str(error.value) == (
         "record-maestro-run: no fonts found; install Arial (macOS) or DejaVu Sans (Linux)"
     )
+
+
+def test_the_video_starts_when_the_first_step_starts():
+    steps = [
+        record.Step("Open the app", 6.5, 7.25, "COMPLETED"),
+        record.Step("Tap Save", 7.5, 8.0, "COMPLETED"),
+    ]
+
+    lead_in = record.seconds_before_first_step(steps)
+
+    assert lead_in == 6.5, f"lead-in {lead_in}, expected the first step's start, 6.5"
+
+
+def test_a_first_step_timed_before_the_recording_cuts_nothing():
+    steps = [record.Step("Open the app", -0.25, 0.5, "COMPLETED")]
+
+    lead_in = record.seconds_before_first_step(steps)
+
+    assert lead_in == 0.0, f"lead-in {lead_in}, expected 0.0"
+
+
+def test_a_run_without_steps_renders_nothing():
+    with pytest.raises(RuntimeError) as error:
+        record.seconds_before_first_step([])
+
+    assert str(error.value) == (
+        "record-maestro-run: Maestro ran no steps, so there is nothing to show"
+    )
+
+
+def test_a_shifted_step_is_timed_from_the_trimmed_start():
+    step = record.Step("Open the app", 6.5, 7.25, "COMPLETED")
+
+    shifted = step.shifted(6.5)
+
+    assert shifted == record.Step("Open the app", 0.0, 0.75, "COMPLETED"), f"got {shifted}"
+
+
+def test_a_trimmed_recording_drops_the_lead_in():
+    recording = record.Recording(Path("screen.mp4"), 12.0, 1_000)
+
+    trimmed = recording.trimmed(6.5)
+
+    assert trimmed == record.Recording(Path("screen.mp4"), 5.5, 1_000, 6.5), f"got {trimmed}"
+
+
+def test_the_device_screen_starts_where_the_recording_was_trimmed():
+    recording = record.Recording(Path("screen.mp4"), 5.5, 1_000, 6.5)
+
+    filters = record.filters_with_screen(["color=c=black[canvas]", "drawtext=text=x"], recording)
+
+    assert filters[0] == (
+        "[0:v]trim=start=6.500,setpts=PTS-STARTPTS,fps=30,scale=-2:984,"
+        "tpad=stop_mode=clone:stop_duration=5.500,trim=duration=5.500[screen]"
+    ), f"screen chain {filters[0]}"
