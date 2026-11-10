@@ -351,12 +351,19 @@ def write_drawn_text(work, title, steps):
 
 
 def filter_script(recording, steps):
+    """The step list drawn on a canvas, with the device screen placed at the right."""
     font_size = step_font_size(len(steps))
-    list_filters = [canvas_filter(recording.length), title_filter()]
+    drawing = [title_filter()]
     for index, step in enumerate(steps):
-        list_filters.extend(step_filters(index, step, font_size))
+        drawing.extend(step_filters(index, step, font_size))
+    chains = [
+        screen_filter(recording),
+        canvas_filter(recording.length),
+        "[canvas]" + ",".join(drawing) + "[listed]",
+        f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]",
+    ]
 
-    return ";".join(filters_with_screen(list_filters, recording))
+    return ";".join(chains)
 
 
 def step_font_size(step_count):
@@ -419,20 +426,14 @@ def step_filters(index, step, font_size):
     return filters
 
 
-def filters_with_screen(list_filters, recording):
-    """Chains the list drawing on the canvas, the first of the list filters, then places the
-    device screen at the right."""
+def screen_filter(recording):
+    """The device screen without the trimmed lead-in, its last frame held to the run's end."""
     length = recording.length
-    screen = (
+    return (
         f"[0:v]trim=start={recording.skipped:.3f},setpts=PTS-STARTPTS,fps={FPS},"
         f"scale=-2:{SCREEN_HEIGHT},tpad=stop_mode=clone:stop_duration={length:.3f},"
         f"trim=duration={length:.3f}[screen]"
     )
-    canvas, *drawing_filters = list_filters
-    drawing = "[canvas]" + ",".join(drawing_filters) + "[listed]"
-    overlay = f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]"
-
-    return [screen, canvas, drawing, overlay]
 
 
 def encode(recording, out):

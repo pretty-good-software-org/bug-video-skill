@@ -208,9 +208,9 @@ def test_a_trimmed_recording_drops_the_lead_in():
 def test_the_device_screen_starts_where_the_recording_was_trimmed():
     recording = record.Recording(Path("screen.mp4"), 5.5, 1_000, 6.5)
 
-    filters = record.filters_with_screen(["color=c=black[canvas]", "drawtext=text=x"], recording)
+    screen = record.screen_filter(recording)
 
-    assert filters[0] == (
+    assert screen == (
         "[0:v]trim=start=6.500,setpts=PTS-STARTPTS,fps=30,scale=-2:984,"
         "tpad=stop_mode=clone:stop_duration=5.500,trim=duration=5.500[screen]"
-    ), f"screen chain {filters[0]}"
+    ), f"screen chain {screen}"
