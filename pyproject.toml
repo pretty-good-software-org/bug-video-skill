@@ -18,10 +18,12 @@ package = false
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "UP", "B", "SIM", "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
 src = ["tests"]
 # The skill ships its Python entry point without a .py extension, so it runs by name.
 extend-include = ["skills/*/scripts/record-maestro-run"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
