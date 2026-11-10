@@ -327,44 +327,10 @@ def selector_text(selector):
 
 
 def render(recording, steps, args):
-    title = args.title or flow_name(args.flow)
-    font_size = step_font_size(len(steps))
     work = recording.path.parent
-    (work / "title.txt").write_text(title)
-    filters = [canvas_filter(recording.length), title_filter()]
-    for index, step in enumerate(steps):
-        (work / f"step{index}.txt").write_text(step.text)
-        filters.extend(step_filters(index, step, font_size))
-    (work / "filters.txt").write_text(";".join(filters_with_screen(filters, recording)))
-    command = [
-        "ffmpeg",
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        recording.path.name,
-        "-filter_complex_script",
-        "filters.txt",
-        "-map",
-        "[out]",
-        "-t",
-        f"{recording.length:.3f}",
-        "-r",
-        str(FPS),
-        "-c:v",
-        "libx264",
-        "-crf",
-        "23",
-        "-preset",
-        "slow",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        "-an",
-        str(args.out),
-    ]
-    subprocess.run(command, cwd=work, check=True)
+    write_drawn_text(work, args.title or flow_name(args.flow), steps)
+    (work / "filters.txt").write_text(filter_script(recording, steps))
+    encode(recording, args.out)
 
 
 def flow_name(flow):
@@ -373,6 +339,22 @@ def flow_name(flow):
             return line.removeprefix("name:").strip()
 
     return flow.stem
+
+
+def write_drawn_text(work, title, steps):
+    """Writes the text that drawtext reads from files, so no step text needs filter escaping."""
+    (work / "title.txt").write_text(title)
+    for index, step in enumerate(steps):
+        (work / f"step{index}.txt").write_text(step.text)
+
+
+def filter_script(recording, steps):
+    font_size = step_font_size(len(steps))
+    list_filters = [canvas_filter(recording.length), title_filter()]
+    for index, step in enumerate(steps):
+        list_filters.extend(step_filters(index, step, font_size))
+
+    return ";".join(filters_with_screen(list_filters, recording))
 
 
 def step_font_size(step_count):
@@ -448,6 +430,38 @@ def filters_with_screen(list_filters, recording):
     overlay = f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]"
 
     return [screen, canvas, drawing, overlay]
+
+
+def encode(recording, out):
+    command = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        recording.path.name,
+        "-filter_complex_script",
+        "filters.txt",
+        "-map",
+        "[out]",
+        "-t",
+        f"{recording.length:.3f}",
+        "-r",
+        str(FPS),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "23",
+        "-preset",
+        "slow",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(out),
+    ]
+    subprocess.run(command, cwd=recording.path.parent, check=True)
 
 
 def failure(message):
