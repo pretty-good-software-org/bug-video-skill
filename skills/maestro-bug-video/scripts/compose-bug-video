@@ -137,10 +137,15 @@ compose_explain() {
   join_with_title
 }
 
+# One half of the comparison: the recording under a labelled bar in the side's colours.
 side_panel() {
-  local input=$1 label=$2 colors=$3
-  local text_color=${colors%%,*} fill=${colors##*,}
-  echo "[$input:v]fps=$fps,$(fit_into 960 540),tpad=stop_mode=clone:stop_duration=600,pad=960:620:0:80:color=$background,drawbox=x=0:y=0:w=960:h=80:color=$fill:t=fill,$(text_filter "$label" "fontfile=bold.ttf:fontcolor=$text_color:fontsize=40:y=(80-th)/2")"
+  local input=$1 side=$2
+  local text_color fill
+  case $side in
+    before) text_color=$bug_text fill=$bug_fill ;;
+    after) text_color=$fix_text fill=$fix_fill ;;
+  esac
+  echo "[$input:v]fps=$fps,$(fit_into 960 540),tpad=stop_mode=clone:stop_duration=600,pad=960:620:0:80:color=$background,drawbox=x=0:y=0:w=960:h=80:color=$fill:t=fill,$(text_filter "${side}_label" "fontfile=bold.ttf:fontcolor=$text_color:fontsize=40:y=(80-th)/2")"
 }
 
 compose_compare() {
@@ -151,56 +156,72 @@ compose_compare() {
   write_text after_label "$opt_after_label" "$(chars_fitting 960 40)"
   make_title_card 1920 740
   encode -i "$opt_before" -i "$opt_after" -filter_complex \
-    "$(side_panel 0 before_label "$bug_text,$bug_fill")[b];$(side_panel 1 after_label "$fix_text,$fix_fill")[a];[b][a]hstack=inputs=2,pad=1920:740:0:0:color=$background,$(caption_filter 1920 120 34)[v]" \
+    "$(side_panel 0 before)[b];$(side_panel 1 after)[a];[b][a]hstack=inputs=2,pad=1920:740:0:0:color=$background,$(caption_filter 1920 120 34)[v]" \
     -map "[v]" -t "$length" body.mp4
   join_with_title
+}
+
+parse_options() {
+  opt_video="" opt_before="" opt_after="" opt_title="" opt_subtitle="" opt_caption="" opt_steps="" opt_out=""
+  opt_before_label=$default_before_label opt_after_label=$default_after_label opt_hold=$default_hold_seconds
+  opt_font="" opt_font_bold=""
+  while (($#)); do
+    [[ $# -ge 2 ]] || fail "missing value for $1"
+    case $1 in
+      --video) opt_video=$2 ;;
+      --before) opt_before=$2 ;;
+      --after) opt_after=$2 ;;
+      --title) opt_title=$2 ;;
+      --subtitle) opt_subtitle=$2 ;;
+      --caption) opt_caption=$2 ;;
+      --steps) opt_steps=$2 ;;
+      --before-label) opt_before_label=$2 ;;
+      --after-label) opt_after_label=$2 ;;
+      --hold) opt_hold=$2 ;;
+      --font) opt_font=$2 ;;
+      --font-bold) opt_font_bold=$2 ;;
+      --out) opt_out=$2 ;;
+      *) fail "unknown option $1" ;;
+    esac
+    shift 2
+  done
+}
+
+check_text_and_hold() {
+  [[ -n "$opt_title" && -n "$opt_subtitle" && -n "$opt_caption" && -n "$opt_out" ]] \
+    || fail "--title, --subtitle, --caption and --out are required"
+  [[ "$opt_hold" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--hold must be a number of seconds, got \"$opt_hold\""
+}
+
+# Recording paths become absolute before the work directory takes over.
+resolve_recordings() {
+  if [[ "$mode" == explain ]]; then
+    [[ -f "$opt_video" ]] || fail "--video must be an existing recording, got \"$opt_video\""
+    opt_video=$(absolute "$opt_video")
+    return
+  fi
+  [[ -f "$opt_before" && -f "$opt_after" ]] || fail "--before and --after must be existing recordings"
+  opt_before=$(absolute "$opt_before")
+  opt_after=$(absolute "$opt_after")
+}
+
+# An empty option falls back to the first system font found; either way the file must exist.
+resolve_fonts() {
+  opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
+  opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
+  [[ -f "$opt_font" ]] || fail "--font must be an existing font file, got \"$opt_font\""
+  [[ -f "$opt_font_bold" ]] || fail "--font-bold must be an existing font file, got \"$opt_font_bold\""
 }
 
 mode=${1:-}
 [[ "$mode" == explain || "$mode" == compare ]] || usage
 shift
-
-opt_video="" opt_before="" opt_after="" opt_title="" opt_subtitle="" opt_caption="" opt_steps="" opt_out=""
-opt_before_label=$default_before_label opt_after_label=$default_after_label opt_hold=$default_hold_seconds
-opt_font="" opt_font_bold=""
-while (($#)); do
-  [[ $# -ge 2 ]] || fail "missing value for $1"
-  case $1 in
-    --video) opt_video=$2 ;;
-    --before) opt_before=$2 ;;
-    --after) opt_after=$2 ;;
-    --title) opt_title=$2 ;;
-    --subtitle) opt_subtitle=$2 ;;
-    --caption) opt_caption=$2 ;;
-    --steps) opt_steps=$2 ;;
-    --before-label) opt_before_label=$2 ;;
-    --after-label) opt_after_label=$2 ;;
-    --hold) opt_hold=$2 ;;
-    --font) opt_font=$2 ;;
-    --font-bold) opt_font_bold=$2 ;;
-    --out) opt_out=$2 ;;
-    *) fail "unknown option $1" ;;
-  esac
-  shift 2
-done
+parse_options "$@"
 
 require_tools
-[[ -n "$opt_title" && -n "$opt_subtitle" && -n "$opt_caption" && -n "$opt_out" ]] \
-  || fail "--title, --subtitle, --caption and --out are required"
-[[ "$opt_hold" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--hold must be a number of seconds, got \"$opt_hold\""
-# Recording and output paths become absolute before the work directory takes over.
-if [[ "$mode" == explain ]]; then
-  [[ -f "$opt_video" ]] || fail "--video must be an existing recording, got \"$opt_video\""
-  opt_video=$(absolute "$opt_video")
-else
-  [[ -f "$opt_before" && -f "$opt_after" ]] || fail "--before and --after must be existing recordings"
-  opt_before=$(absolute "$opt_before")
-  opt_after=$(absolute "$opt_after")
-fi
-opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
-opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
-[[ -f "$opt_font" ]] || fail "--font must be an existing font file, got \"$opt_font\""
-[[ -f "$opt_font_bold" ]] || fail "--font-bold must be an existing font file, got \"$opt_font_bold\""
+check_text_and_hold
+resolve_recordings
+resolve_fonts
 opt_out=$(absolute "$opt_out")
 centering=$(line_centering)
 
