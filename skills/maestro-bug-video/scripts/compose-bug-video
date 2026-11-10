@@ -199,6 +199,8 @@ else
 fi
 opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
 opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
+[[ -f "$opt_font" ]] || fail "--font must be an existing font file, got \"$opt_font\""
+[[ -f "$opt_font_bold" ]] || fail "--font-bold must be an existing font file, got \"$opt_font_bold\""
 opt_out=$(absolute "$opt_out")
 centering=$(line_centering)
 
