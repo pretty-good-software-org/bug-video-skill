@@ -22,7 +22,8 @@ def make_bin_dir(directory, stubs):
         stub = directory / name
         stub.write_text(f"#!/bin/sh\n{body}\n")
         stub.chmod(0o755)
-    (directory / "sed").symlink_to(shutil.which("sed"))
+    for tool in ("sed", "dirname", "basename"):
+        (directory / tool).symlink_to(shutil.which(tool))
 
     return directory
 
@@ -120,11 +121,24 @@ def test_without_a_mode_prints_usage_and_exits_2(tmp_path):
             compare_arguments(before="run.mp4", after="missing.mp4"),
             "--before and --after must be existing recordings",
         ),
+        (
+            "font that does not exist",
+            COMPLETE_TOOLS,
+            explain_arguments("--font", "missing.ttf", "--font-bold", "font.ttf"),
+            '--font must be an existing font file, got "missing.ttf"',
+        ),
+        (
+            "bold font that does not exist",
+            COMPLETE_TOOLS,
+            explain_arguments("--font", "font.ttf", "--font-bold", "missing.ttf"),
+            '--font-bold must be an existing font file, got "missing.ttf"',
+        ),
     ],
 )
 def test_rejects_unusable_input_with_one_message(tmp_path, case, stubs, arguments, expected_error):
     bin_dir = make_bin_dir(tmp_path / "bin", stubs)
     (tmp_path / "run.mp4").write_bytes(b"")
+    (tmp_path / "font.ttf").write_bytes(b"")
 
     result = run_compose(arguments, bin_dir=bin_dir, cwd=tmp_path)
 
