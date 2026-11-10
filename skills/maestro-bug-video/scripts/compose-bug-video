@@ -188,21 +188,17 @@ require_tools
 [[ -n "$opt_title" && -n "$opt_subtitle" && -n "$opt_caption" && -n "$opt_out" ]] \
   || fail "--title, --subtitle, --caption and --out are required"
 [[ "$opt_hold" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--hold must be a number of seconds, got \"$opt_hold\""
+# Recording and output paths become absolute before the work directory takes over.
 if [[ "$mode" == explain ]]; then
   [[ -f "$opt_video" ]] || fail "--video must be an existing recording, got \"$opt_video\""
-else
-  [[ -f "$opt_before" && -f "$opt_after" ]] || fail "--before and --after must be existing recordings"
-fi
-opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
-opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
-
-# Paths become absolute before the work directory takes over.
-if [[ "$mode" == explain ]]; then
   opt_video=$(absolute "$opt_video")
 else
+  [[ -f "$opt_before" && -f "$opt_after" ]] || fail "--before and --after must be existing recordings"
   opt_before=$(absolute "$opt_before")
   opt_after=$(absolute "$opt_after")
 fi
+opt_font=${opt_font:-$(first_existing "$macos_regular" "$linux_regular")} || fail "no regular font found; pass --font"
+opt_font_bold=${opt_font_bold:-$(first_existing "$macos_bold" "$linux_bold")} || fail "no bold font found; pass --font-bold"
 opt_out=$(absolute "$opt_out")
 centering=$(line_centering)
 
