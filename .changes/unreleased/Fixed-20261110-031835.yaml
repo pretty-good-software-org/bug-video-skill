@@ -1,5 +1,0 @@
-kind: Fixed
-body: >-
-  Reject a `--font` or `--font-bold` path that does not exist with a `compose-bug-video:` error naming the option.
-  `compose-bug-video` used to stop with a bare `cp` error instead.
-time: 2026-11-10T03:18:35.824495+01:00
