@@ -258,8 +258,10 @@ def find_commands_json(output_dir):
 def read_steps(commands_json, started_at_ms):
     steps = []
     for entry in json.loads(commands_json.read_text()):
+        # Maestro writes every command kind as null except the one the entry ran.
         kind, body = next((k, v) for k, v in entry["command"].items() if v is not None)
         metadata = entry["metadata"]
+        # A nonzero depth marks a command run inside another one, such as runFlow.
         if kind in HIDDEN_COMMANDS or metadata.get("depth", 0) != 0:
             continue
         start = (metadata["timestamp"] - started_at_ms) / 1000
@@ -418,15 +420,16 @@ def step_filters(index, step, font_size):
 
 
 def filters_with_screen(list_filters, recording):
-    """Chains the list drawing on the canvas, then places the device screen at the right."""
+    """Chains the list drawing on the canvas, the first of the list filters, then places the
+    device screen at the right."""
     length = recording.length
     screen = (
         f"[0:v]trim=start={recording.skipped:.3f},setpts=PTS-STARTPTS,fps={FPS},"
         f"scale=-2:{SCREEN_HEIGHT},tpad=stop_mode=clone:stop_duration={length:.3f},"
         f"trim=duration={length:.3f}[screen]"
     )
-    canvas = list_filters[0]
-    drawing = "[canvas]" + ",".join(list_filters[1:]) + "[listed]"
+    canvas, *drawing_filters = list_filters
+    drawing = "[canvas]" + ",".join(drawing_filters) + "[listed]"
     overlay = f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]"
 
     return [screen, canvas, drawing, overlay]
