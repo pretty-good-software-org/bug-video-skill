@@ -38,11 +38,9 @@ def run_compose(arguments, *, bin_dir, cwd):
     )
 
 
-def explain_arguments(*extra):
+def text_and_out_arguments():
+    """The options both modes require besides their recordings."""
     return [
-        "explain",
-        "--video",
-        "run.mp4",
         "--title",
         "Notes · Editor",
         "--subtitle",
@@ -51,8 +49,15 @@ def explain_arguments(*extra):
         "The keyboard never closes.",
         "--out",
         "bug.mp4",
-        *extra,
     ]
+
+
+def explain_arguments(*extra, video="run.mp4"):
+    return ["explain", "--video", video, *text_and_out_arguments(), *extra]
+
+
+def compare_arguments(*, before, after):
+    return ["compare", "--before", before, "--after", after, *text_and_out_arguments()]
 
 
 def test_without_a_mode_prints_usage_and_exits_2(tmp_path):
@@ -106,13 +111,13 @@ def test_without_a_mode_prints_usage_and_exits_2(tmp_path):
         (
             "explain without its recording",
             COMPLETE_TOOLS,
-            [*explain_arguments()[:2], "missing.mp4", *explain_arguments()[3:]],
+            explain_arguments(video="missing.mp4"),
             '--video must be an existing recording, got "missing.mp4"',
         ),
         (
             "compare without the after recording",
             COMPLETE_TOOLS,
-            ["compare", "--before", "run.mp4", "--after", "missing.mp4", *explain_arguments()[3:]],
+            compare_arguments(before="run.mp4", after="missing.mp4"),
             "--before and --after must be existing recordings",
         ),
     ],
