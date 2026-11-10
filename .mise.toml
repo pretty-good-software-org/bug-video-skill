@@ -28,6 +28,3 @@ uv = "0.11.26"
 # uv otherwise prefers its separately managed Python installation over the
 # exact runtime selected by Mise, making the Python pin ineffective.
 UV_NO_MANAGED_PYTHON = "1"
-# uv run otherwise rewrites a uv.lock that no longer matches pyproject.toml,
-# so a dependency bump without a lock update would pass CI unnoticed.
-UV_LOCKED = "1"

@@ -24,8 +24,9 @@ build. The repository is public under the MIT license.
 - `.mise.toml` and `mise.lock` pin the tools CI uses; the development profile adds the Git hook tools (Lefthook and
   gitleaks). `tests/test_plugin_contract.py` checks that the manifest and the skill describe one identity and that the
   skill's links resolve.
-- `pyproject.toml` and `uv.lock` own Python dependencies; `UV_NO_MANAGED_PYTHON=1` forces uv onto Mise's Python, and
-  `UV_LOCKED=1` makes every `uv run` fail on a lock that no longer matches `pyproject.toml`.
+- `pyproject.toml` and `uv.lock` own Python dependencies; `UV_NO_MANAGED_PYTHON=1` forces uv onto Mise's Python. Every
+  `uv run` in the mise tasks and Lefthook hooks passes `--locked`, so a lock that no longer matches `pyproject.toml`
+  fails; run `uv lock` to update it.
 - Changie owns `CHANGELOG.md`: add entries under `.changes/unreleased/`, batch them into `.changes/<version>.md`, and
   merge.
 - Branch protection and repository settings are managed outside this repository; do not change them in the GitHub UI.
