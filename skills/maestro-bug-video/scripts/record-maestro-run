@@ -140,9 +140,7 @@ def find_fonts(candidates):
         if fonts.regular.is_file() and fonts.bold.is_file():
             return fonts
 
-    raise RuntimeError(
-        "record-maestro-run: no fonts found; install Arial (macOS) or DejaVu Sans (Linux)"
-    )
+    raise failure("no fonts found; install Arial (macOS) or DejaVu Sans (Linux)")
 
 
 def copy_fonts(fonts, work):
@@ -159,8 +157,8 @@ def record_flow(args, work):
     finally:
         stopped_at_ms = stop_screen_recording(args.device, recorder)
     path = work / "screen.mp4"
-    run_quietly(["adb", "-s", args.device, "pull", DEVICE_RECORDING, str(path)])
-    run_quietly(["adb", "-s", args.device, "shell", "rm", "-f", DEVICE_RECORDING])
+    run_quietly(adb(args.device, "pull", DEVICE_RECORDING, str(path)))
+    run_quietly(adb(args.device, "shell", "rm", "-f", DEVICE_RECORDING))
     recording = Recording(path, (stopped_at_ms - started_at_ms) / 1000, started_at_ms)
 
     return recording, maestro_exit
@@ -170,15 +168,16 @@ def run_quietly(command):
     """Runs a helper command, showing its output only when it fails."""
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"record-maestro-run: {' '.join(command)} failed: {result.stderr.strip()}"
-        )
+        raise failure(f"{' '.join(command)} failed: {result.stderr.strip()}")
+
+
+def adb(device, *arguments):
+    """An adb command addressed to the device."""
+    return ["adb", "-s", device, *arguments]
 
 
 def start_screen_recording(device):
-    command = [
-        "adb",
-        "-s",
+    command = adb(
         device,
         "shell",
         "screenrecord",
@@ -187,8 +186,8 @@ def start_screen_recording(device):
         "--bit-rate",
         "8000000",
         DEVICE_RECORDING,
-    ]
-    started_at_ms = time.time_ns() // 1_000_000
+    )
+    started_at_ms = now_ms()
     recorder = subprocess.Popen(
         command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
     )
@@ -196,13 +195,15 @@ def start_screen_recording(device):
     return recorder, started_at_ms
 
 
+def now_ms():
+    return time.time_ns() // 1_000_000
+
+
 def time_limit_seconds(device):
     """0, for no limit, where this device's screenrecord supports it; otherwise its old fixed
     maximum."""
     help_text = subprocess.run(
-        ["adb", "-s", device, "shell", "screenrecord", "--help"],
-        capture_output=True,
-        text=True,
+        adb(device, "shell", "screenrecord", "--help"), capture_output=True, text=True
     )
     if SCREENRECORD_NO_LIMIT_HINT in help_text.stdout + help_text.stderr:
         return 0
@@ -229,18 +230,16 @@ def run_maestro(args, output_dir):
 
 
 def stop_screen_recording(device, recorder):
-    stopped_at_ms = time.time_ns() // 1_000_000
+    stopped_at_ms = now_ms()
     # SIGINT lets screenrecord finish the MP4; killing it outright leaves a file without its index.
-    subprocess.run(["adb", "-s", device, "shell", "pkill", "-INT", "screenrecord"], check=False)
+    subprocess.run(adb(device, "shell", "pkill", "-INT", "screenrecord"), check=False)
     try:
         recorder.wait(timeout=STOP_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         recorder.kill()
-        raise RuntimeError("record-maestro-run: screenrecord did not stop after SIGINT") from None
+        raise failure("screenrecord did not stop after SIGINT") from None
     if recorder.returncode != 0:
-        raise RuntimeError(
-            f"record-maestro-run: screenrecord failed: {recorder.stderr.read().strip()}"
-        )
+        raise failure(f"screenrecord failed: {recorder.stderr.read().strip()}")
 
     return stopped_at_ms
 
@@ -251,9 +250,7 @@ def find_commands_json(output_dir):
         path for path in output_dir.rglob("commands*.json") if debug_dir not in path.parents
     )
     if len(found) != 1:
-        raise RuntimeError(
-            f"record-maestro-run: expected one commands.json under {output_dir}, found {len(found)}"
-        )
+        raise failure(f"expected one commands.json under {output_dir}, found {len(found)}")
 
     return found[0]
 
@@ -282,7 +279,7 @@ def seconds_before_first_step(steps):
     """Maestro's startup, often several seconds, shows whatever the device showed before the run;
     the video leaves it out."""
     if not steps:
-        raise RuntimeError("record-maestro-run: Maestro ran no steps, so there is nothing to show")
+        raise failure("Maestro ran no steps, so there is nothing to show")
 
     return max(0.0, steps[0].start)
 
@@ -451,6 +448,11 @@ def filters_with_screen(list_filters, recording):
     overlay = f"[listed][screen]overlay=x=W-w-{MARGIN}:y={MARGIN}:shortest=1[out]"
 
     return [screen, canvas, drawing, overlay]
+
+
+def failure(message):
+    """An error whose message names this script, as every message it reports does."""
+    return RuntimeError(f"record-maestro-run: {message}")
 
 
 if __name__ == "__main__":
