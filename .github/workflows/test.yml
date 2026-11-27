@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
       # LW-11 (2026-11-26): no mise cache on self-hosted X64 VMs (restore ~24s vs cold install 9–11s);
       # save only from the default branch.
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
           cache: ${{ !(runner.environment == 'self-hosted' && runner.os == 'Linux' && runner.arch == 'X64') }}
           cache_save: >-
